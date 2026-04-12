@@ -585,6 +585,7 @@ code { background: var(--surface2); border: 1px solid var(--border); padding: 1p
 <div class="page-header">
   <div>
     <div class="page-title" id="pageTitle">Datenauswertung Wasserqualitätsparameter</div>
+    <div id="datasetSubtitle" style="font-size:12px;font-weight:500;color:var(--text-muted);margin-top:2px;display:none"></div>
     <div class="page-meta">
       <span class="meta-pill live"><span class="live-dot"></span>Aktiv</span>
       <span class="meta-pill" id="metaDateRange">01.01.2026 – 01.03.2026</span>
@@ -1444,6 +1445,8 @@ function processFile(file) {
   document.getElementById('progressLog').innerHTML = '';
   setProgress(0, 'Lese Datei…');
   logMsg('📂 '+file.name+' ('+( file.size/1024/1024).toFixed(2)+' MB)');
+  // Dateinamen als Datensatz-Bezeichnung speichern (ohne Erweiterung)
+  window._datasetName = file.name.replace(/\.[^.]+$/, '').replace(/_/g,' ').trim();
 
   const reader = new FileReader();
   reader.onload = e => {
@@ -1535,6 +1538,15 @@ function applyUploadedData() {
   const from = fp?.timeseries[0]?.t?.slice(0,10)||'';
   const to = fp?.timeseries.slice(-1)[0]?.t?.slice(0,10)||'';
   document.getElementById('metaDateRange').textContent = `${from} – ${to}`;
+  if (window._datasetName) {
+    const sub = document.getElementById('datasetSubtitle');
+    sub.textContent = window._datasetName;
+    sub.style.display = 'block';
+  }
+  // Seitentitel mit Datensatzname aktualisieren
+  if (window._datasetName) {
+    document.getElementById('pageTitle').textContent = window._datasetName;
+  }
   const totalN = Object.values(DATA).reduce((s,v)=>s+(v.n||0),0);
   document.getElementById('metaCount').textContent = totalN.toLocaleString('de-CH')+' Messungen';
 
@@ -1846,7 +1858,10 @@ async function drawTrendsChart(canvas, ctx) {
 async function drawStatsChart(canvas, ctx) {
   const W = canvas.width, H = canvas.height;
   ctx.fillStyle='#1e293b'; ctx.font='bold 20px Inter,sans-serif';
-  ctx.fillText('Statistische Auswertung – WV GWPW Stocketen · 01.01.2026 – 01.03.2026', 40, 36);
+  const fp2 = Object.values(DATA)[0];
+  const _from = fp2?.timeseries[0]?.t?.slice(0,10)||'';
+  const _to   = fp2?.timeseries.slice(-1)[0]?.t?.slice(0,10)||'';
+  ctx.fillText('Statistische Auswertung – '+(window._datasetName||'Messdaten')+' · '+_from+' – '+_to, 40, 36);
 
   const paramKeys = ['SSK436','SAK436','DOC','Leitfähigkeit','pH-Wert','Temperatur','Redox','TOC','Trübung','Grundwasserpegel'];
   const paramLabels = ['SSK436','SAK436','DOC','Leitf.','pH','Temp.','Redox','TOC','Trüb.','GW-P.'];
@@ -2165,7 +2180,7 @@ async function generateReport() {
         // DECKBLATT
         wEmpty(2400),
         new Paragraph({ spacing:{before:0,after:240}, children:[
-          new TextRun({text:'WV GWPW Stocketen',bold:true,color:C_DARK,size:110,font:'Arial'})]}),
+          new TextRun({text: window._datasetName || 'WV GWPW Stocketen',bold:true,color:C_DARK,size:110,font:'Arial'})]}),
         new Paragraph({ spacing:{before:0,after:160}, children:[
           new TextRun({text:'Wasserqualitätsbericht '+dateFrom+' \u2013 '+dateTo,bold:true,color:C_DARK,size:40,font:'Arial'})]}),
         new Paragraph({ spacing:{before:0,after:80}, children:[
@@ -2217,7 +2232,7 @@ async function generateReport() {
 
         // 2. MESSÜBERSICHT
         wH1('2.  Mess\u00fcbersicht'),
-        wH2('Alle Parameter \u2013 '+dateFrom+' \u2013 '+dateTo),
+        wH2((window._datasetName||'Messdaten')+' \u2013 '+dateFrom+' \u2013 '+dateTo),
         wBody('St\u00fcndliche Mittelwerte aller 10 Messparameter. Gelb hinterlegt: Nullwert-Perioden SSK/SAK. Rot markiert: Redox-Einbruch 16.02.2026.'),
         wEmpty(80),
         wChart(0, 16/10),
@@ -2360,7 +2375,9 @@ async function generateReport() {
   rStep(4);
   rLog('💾 Packe Word-Datei…', 'info');
 
-  const fileName = `Stocketen_Wasserbericht_${dateFrom}_${dateTo}.docx`;
+  const datasetSlug = (window._datasetName || 'Wasserbericht')
+    .replace(/[^a-zA-Z0-9äöüÄÖÜ\s_-]/g,'').replace(/\s+/g,'_').slice(0,40);
+  const fileName = `${datasetSlug}_${dateFrom}_${dateTo}.docx`;
   const wordBlob = await Packer.toBlob(wordDoc);
   const url = URL.createObjectURL(wordBlob);
   const link = document.getElementById('reportDownloadLink');
