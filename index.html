@@ -1462,7 +1462,7 @@ function processFile(file) {
       setProgress(20, 'Parse Excel…');
       const wb = XLSX.read(e.target.result, { type:'array', cellDates:true });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:false, dateNF:'yyyy-mm-dd hh:mm:ss' });
+      const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:false, dateNF:'yyyy-mm-dd hh:mm:ss', defval:'' });
       logMsg('✔ '+wb.SheetNames[0]+' · '+(rows.length-1).toLocaleString('de-CH')+' Zeilen', 'ok');
       setProgress(30, 'Erkenne Spaltenstruktur…');
 
@@ -1512,7 +1512,7 @@ function processFile(file) {
           const d = new Date(+yy, +mm-1, +dd, +hh, +mn, +ss);
           return isNaN(d) ? null : d;
         }
-        // Nur Datum: DD.MM.YY(YY)
+        // Nur Datum DD.MM.YY(YY)
         const swDate = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
         if (swDate) {
           let [,dd,mm,yy] = swDate;
@@ -1520,19 +1520,33 @@ function processFile(file) {
           const d = new Date(+yy, +mm-1, +dd);
           return isNaN(d) ? null : d;
         }
+        // US-Format von SheetJS cellDates:true: M/D/YY H:MM oder M/D/YYYY H:MM
+        const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+        if (us) {
+          let [,mm,dd,yy,hh,mn,ss='0'] = us;
+          if (yy.length === 2) yy = parseInt(yy) < 50 ? '20'+yy : '19'+yy;
+          const d = new Date(+yy, +mm-1, +dd, +hh, +mn, +ss);
+          return isNaN(d) ? null : d;
+        }
         // ISO und andere Formate (Fallback)
         const d = new Date(s);
         return isNaN(d) ? null : d;
       }
 
-      // Hilfsfunktion: ist ein Wert ein Zeitstempel?
+      // Hilfsfunktion: ist ein Wert ein Zeitstempel (Datums-String)?
+      // Wichtig: Excel-Seriennummern (reine Zahlen) sind KEIN Timestamp hier,
+      // weil cellDates:true sie bereits in Strings umwandelt.
       function isTimestamp(val) {
         if (!val) return false;
-        if (val instanceof Date) return true;
+        if (val instanceof Date) return !isNaN(val);
         const s = String(val).trim();
-        return /^\d{1,2}\.\d{1,2}\.\d{2,4}/.test(s) ||
-               /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(s) ||
-               /^\d{5,}\.?\d*$/.test(s);  // Excel Seriennummer
+        // Schweizer/Deutsches Format: 01.01.24 oder 01.01.2024
+        if (/^\d{1,2}\.\d{1,2}\.\d{2,4}/.test(s)) return true;
+        // ISO-Format: 2024-01-01
+        if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(s)) return true;
+        // US-Format von SheetJS: 1/1/24 0:00
+        if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) return true;
+        return false;
       }
 
       // Hilfsfunktion: ist ein Wert eine Zahl?
@@ -1541,41 +1555,55 @@ function processFile(file) {
         return !isNaN(parseFloat(String(val).replace(',','.')));
       }
 
-      // Spaltentypen bestimmen (aus den ersten 20 Datenzeilen)
-      const sampleRows = dataRows.slice(0, 20);
-      const colCount = Math.max(...rows.slice(0,20).map(r => r ? r.length : 0));
+      // Spaltenanzahl robust (kein Spread auf grossen Arrays)
+      let colCount = 0;
+      for (let ri = 0; ri < Math.min(5, rows.length); ri++) {
+        if (Array.isArray(rows[ri])) colCount = Math.max(colCount, rows[ri].length);
+      }
+      const sampleRows = dataRows.slice(0, 30);
 
-      // Spalte 0 = Zeitstempel-Hauptspalte (immer)
-      // Weitere Spalten: schauen ob sie Zeitstempel oder Zahlen enthalten
+      // Spalte 0 = Zeitstempel (immer).
+      // Weitere Spalten werden als Parameter erkannt wenn sie Zahlen enthalten.
+      // Eine Spalte wird NUR übersprungen wenn sie ausschliesslich Timestamps
+      // enthält und KEINE Zahlen — das ist das alte Stocketen-Doppelspalten-Format.
       const PCOLS = [];
-      const tsColIndices = new Set([0]); // bekannte Zeitstempel-Spalten
 
       for (let ci = 1; ci < colCount; ci++) {
-        const vals = sampleRows.map(r => r ? r[ci] : undefined).filter(v => v !== undefined && v !== '');
+        const vals = sampleRows.map(r => r ? r[ci] : undefined)
+                               .filter(v => v !== undefined && v !== '' && v !== null);
         if (!vals.length) continue;
 
-        // Prüfen ob diese Spalte Zeitstempel enthält
-        const tsCount = vals.filter(v => isTimestamp(v)).length;
-        if (tsCount >= vals.length * 0.5) {
-          tsColIndices.add(ci); // markieren, aber nicht als Parameter verwenden
-          logMsg('⏩ Spalte ' + (ci+1) + ' ('+( headerRow[ci]||'—')+'): Zeitstempel-Spalte, wird übersprungen', 'info');
+        const numCount = vals.filter(v => isNumber(v)).length;
+        const tsCount  = vals.filter(v => isTimestamp(v) && !isNumber(v)).length;
+
+        // Überspringen: Spalte enthält fast nur Timestamps, kaum Zahlen
+        // → altes Format mit Zeitstempel-Spalten zwischen den Werten
+        if (tsCount >= vals.length * 0.5 && numCount < vals.length * 0.2) {
+          logMsg('⏩ Spalte ' + (ci+1) + ' (' + (headerRow[ci]||'—') + '): Zeitstempel-Spalte, übersprungen', 'info');
           continue;
         }
 
-        // Prüfen ob diese Spalte Zahlen enthält
-        const numCount = vals.filter(v => isNumber(v)).length;
-        if (numCount >= vals.length * 0.3) {
-          // Parametername aus Header-Zeile, sonst Spaltenbezeichnung
-          const rawName = String(headerRow[ci] || '').trim();
-          const paramName = rawName || ('Parameter_' + (ci+1));
+        // Als Parameter aufnehmen wenn mindestens 20% der Werte Zahlen sind
+        if (numCount < vals.length * 0.2) continue;
 
-          // Einheit aus dem Namen extrahieren falls vorhanden (z.B. "Temperatur [°C]")
-          const unitMatch = paramName.match(/\[([^\]]+)\]|\(([^)]+)\)/);
-          const unit = unitMatch ? (unitMatch[1] || unitMatch[2]) : '';
-          const cleanName = paramName.replace(/\s*[\[(][^\])\*]+[\])]\s*/g, '').trim() || paramName;
+        // Parametername aus Header-Zeile, sonst generisch
+        const rawName  = String(headerRow[ci] || '').trim();
+        const paramName = rawName || ('Parameter_' + (ci+1));
 
-          PCOLS.push({ key: cleanName, vc: ci, unit });
+        // Einheit aus Klammern extrahieren: "Temp [°C]"→"°C", "pH (−)"→"−"
+        let unit = '', cleanName = paramName;
+        const bi = paramName.lastIndexOf('['), be = paramName.lastIndexOf(']');
+        const pi2 = paramName.lastIndexOf('('), pe = paramName.lastIndexOf(')');
+        if (bi >= 0 && be > bi) {
+          unit = paramName.slice(bi+1, be).trim();
+          cleanName = paramName.slice(0, bi).trim();
+        } else if (pi2 >= 0 && pe > pi2) {
+          unit = paramName.slice(pi2+1, pe).trim();
+          cleanName = paramName.slice(0, pi2).trim();
         }
+        if (!cleanName) cleanName = paramName;
+
+        PCOLS.push({ key: cleanName, vc: ci, unit });
       }
 
       if (!PCOLS.length) {
