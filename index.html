@@ -1687,8 +1687,8 @@ function processFile(file) {
 function applyUploadedData() {
   if (!pendingData) return;
   Object.assign(DATA, pendingData);
-  document.getElementById('noDataHint').style.display = 'none';
-  document.getElementById('chartWrap').style.display = 'block';
+  document.getElementById('noDataHint')?.remove();
+  document.getElementById('chartWrap')?.removeAttribute('style');
   if (mainChartInst) { mainChartInst.destroy(); mainChartInst = null; }
 
   // Update header meta
