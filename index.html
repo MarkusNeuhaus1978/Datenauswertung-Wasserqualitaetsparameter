@@ -1025,11 +1025,23 @@ function fmtNum(v, d = 3) {
 }
 
 function filterTs(ts, range) {
-  if (range === 'all') return ts;
+  // Monatsansicht: 1:1 Rohdaten
   if (/^\d{4}-\d{2}$/.test(range)) return ts.filter(d => d.t.startsWith(range));
-  if (range === 'jan') return ts.filter(d => d.t.slice(5,7) === '01');
-  if (range === 'feb') return ts.filter(d => d.t.slice(5,7) === '02');
-  return ts;
+  if (range !== 'all') return ts;
+
+  // ALL-Ansicht: stündlich aggregieren für performante Darstellung
+  // (bei 2-Minuten-Daten über 2 Jahre = ~500k Punkte → auf ~17.5k reduzieren)
+  if (ts.length <= 8760) return ts; // <= 1 Jahr stündlich → direkt anzeigen
+
+  const hMap = {};
+  ts.forEach(d => {
+    const hk = d.t.slice(0, 13) + ':00:00'; // "2024-01-01 14" → "2024-01-01 14:00:00"
+    if (!hMap[hk]) hMap[hk] = { sum: 0, n: 0 };
+    hMap[hk].sum += d.v; hMap[hk].n++;
+  });
+  return Object.keys(hMap).sort().map(t => ({
+    t, v: +(hMap[t].sum / hMap[t].n).toFixed(6)
+  }));
 }
 function filterDaily(daily, range) {
   if (range === 'all') return daily;
@@ -1614,12 +1626,13 @@ function processFile(file) {
       logMsg('✔ ' + PCOLS.length + ' Parameter erkannt: ' + PCOLS.map(p=>p.key).join(', '), 'ok');
       setProgress(40, 'Verarbeite ' + PCOLS.length + ' Parameter…');
 
-      // ── Parameter verarbeiten ────────────────────────────────────────────
+      // ── Parameter verarbeiten – 1:1 Import, keine Aggregation ──────────
       const pctile = (arr, p) => {
         const s=[...arr].sort((a,b)=>a-b);
         const i=(p/100)*(s.length-1), lo=Math.floor(i), hi=Math.ceil(i);
         return +(s[lo]+(s[hi]-s[lo])*(i-lo)).toFixed(6);
       };
+      const pad2 = n => String(n).padStart(2,'0');
 
       const result = {};
 
@@ -1631,34 +1644,17 @@ function processFile(file) {
           const dt = parseTimestamp(r[0]);
           if (!dt) return null;
           const v = parseFloat(String(r[p.vc]||'').replace(',','.'));
-          return !isNaN(v) ? {dt, v} : null;
+          if (isNaN(v)) return null;
+          // Lokaler Zeitstempel als String (kein UTC-Shift)
+          const t = dt.getFullYear()+'-'+pad2(dt.getMonth()+1)+'-'+pad2(dt.getDate())
+                   +' '+pad2(dt.getHours())+':'+pad2(dt.getMinutes())+':'+pad2(dt.getSeconds());
+          return {t, v};
         }).filter(Boolean);
 
         if (!pairs.length) { logMsg('⚠ '+p.key+': keine gültigen Werte', 'warn'); return; }
 
-        const hMap={}, dMap={};
-        pairs.forEach(({dt,v}) => {
-          // Lokale Zeitkomponenten verwenden (kein UTC-Shift durch toISOString)
-          const _p = n => String(n).padStart(2,'0');
-          const hk = dt.getFullYear()+'-'+_p(dt.getMonth()+1)+'-'+_p(dt.getDate())+' '+_p(dt.getHours())+':00:00';
-          const dk = dt.getFullYear()+'-'+_p(dt.getMonth()+1)+'-'+_p(dt.getDate());
-          (hMap[hk]||(hMap[hk]=[])).push(v);
-          (dMap[dk]||(dMap[dk]=[])).push(v);
-        });
-
-        const timeseries = Object.keys(hMap).sort().map(t => ({
-          t, v:+(hMap[t].reduce((a,b)=>a+b)/hMap[t].length).toFixed(6)
-        }));
-        const daily = Object.keys(dMap).sort().map(day => {
-          const vals=dMap[day], mean=vals.reduce((a,b)=>a+b)/vals.length;
-          return {day,
-            min:+vals.reduce((a,b)=>a<b?a:b).toFixed(6), max:+vals.reduce((a,b)=>a>b?a:b).toFixed(6),
-            mean:+mean.toFixed(6),
-            p5:pctile(vals,5), p25:pctile(vals,25), p50:pctile(vals,50),
-            p75:pctile(vals,75), p95:pctile(vals,95)};
-        });
+        // Statistik (stack-sicher)
         const allVals = pairs.map(x=>x.v);
-        // Stack-sicheres Min/Max (kein Spread-Operator bei grossen Arrays)
         let vMin=allVals[0], vMax=allVals[0], vSum=0;
         for(let i=0;i<allVals.length;i++){
           const v=allVals[i];
@@ -1674,11 +1670,11 @@ function processFile(file) {
           max:  +vMax.toFixed(6),
           mean: +mean.toFixed(6),
           std:  +(Math.sqrt(vStdSum/allVals.length)).toFixed(6),
-          p5:pctile(allVals,5), p25:pctile(allVals,25), p50:pctile(allVals,50),
-          p75:pctile(allVals,75), p95:pctile(allVals,95),
-          timeseries, daily
+          p50:  +pctile(allVals,50).toFixed(6),
+          // 1:1 Rohdaten – kein Stunden-Mittelwert, kein Downsampling
+          timeseries: pairs
         };
-        logMsg('✔ '+p.key+': '+allVals.length.toLocaleString('de-CH')+' Werte · '+timeseries.length+' Stunden', 'ok');
+        logMsg('✔ '+p.key+': '+allVals.length.toLocaleString('de-CH')+' Werte ('+pairs[0]?.t?.slice(0,10)+' – '+pairs.slice(-1)[0]?.t?.slice(0,10)+')', 'ok');
       });
 
       setProgress(100,'Fertig!');

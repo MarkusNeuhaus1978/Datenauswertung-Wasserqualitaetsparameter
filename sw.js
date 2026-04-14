@@ -1,9 +1,6 @@
-// Service Worker – Datenauswertung Wasserqualitätsparameter v3
-const CACHE = 'wasserqualitaet-v4';
-const DATA_CACHE = 'wasserqualitaet-data-v4';
-
-const STATIC = ['./', './index.html', './manifest.json', './favicon.ico',
-  './icons/icon-192x192.png', './icons/icon-512x512.png'];
+// Service Worker – Datenauswertung Wasserqualitätsparameter v5
+const CACHE = 'wasserqualitaet-v5';
+const DATA_CACHE = 'wasserqualitaet-data-v5';
 
 const CDN = [
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js',
@@ -13,36 +10,54 @@ const CDN = [
   'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js',
 ];
 
+// Install: nur CDN-Libraries cachen – index.html kommt IMMER frisch vom Netz
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(async c => {
-    await c.addAll(STATIC);
-    await Promise.allSettled(CDN.map(url =>
-      fetch(url, {mode:'cors'}).then(r => r.ok ? c.put(url, r) : null).catch(()=>null)
-    ));
-    console.log('[SW] Installed v2');
-  }));
+  e.waitUntil(
+    caches.open(CACHE).then(async c => {
+      await Promise.allSettled(CDN.map(url =>
+        fetch(url, {mode:'cors'}).then(r => r.ok ? c.put(url, r) : null).catch(()=>null)
+      ));
+      console.log('[SW] v5 installed');
+    })
+  );
   self.skipWaiting();
 });
 
+// Activate: ALLE alten Caches löschen
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys =>
-    Promise.all(keys.filter(k => k !== CACHE && k !== DATA_CACHE).map(k => caches.delete(k)))
-  ));
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE && k !== DATA_CACHE)
+        .map(k => { console.log('[SW] Lösche alten Cache:', k); return caches.delete(k); }))
+    )
+  );
   self.clients.claim();
 });
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
+
+  // index.html: IMMER vom Netz (niemals aus Cache)
+  if (url.pathname.endsWith('/') || url.pathname.endsWith('index.html')) {
+    e.respondWith(
+      fetch(e.request, { cache: 'no-store' })
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // Messdaten: network-first
   if (url.pathname.includes('/data/')) {
     e.respondWith(networkFirst(e.request, DATA_CACHE)); return;
   }
+
+  // CDN-Scripts: cache-first (versioniert, unveränderlich)
   if (url.hostname.includes('cdnjs.') || url.hostname.includes('cdn.jsdelivr.') ||
       url.hostname.includes('fonts.')) {
     e.respondWith(cacheFirst(e.request, CACHE)); return;
   }
-  if (url.origin === self.location.origin) {
-    e.respondWith(cacheFirst(e.request, CACHE)); return;
-  }
+
+  // Alles andere: network-first
   e.respondWith(networkFirst(e.request, CACHE));
 });
 
