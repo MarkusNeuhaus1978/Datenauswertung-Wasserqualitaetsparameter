@@ -588,9 +588,9 @@ code { background: var(--surface2); border: 1px solid var(--border); padding: 1p
     <div id="datasetSubtitle" style="font-size:12px;font-weight:500;color:var(--text-muted);margin-top:2px;display:none"></div>
     <div class="page-meta">
       <span class="meta-pill live"><span class="live-dot"></span>Aktiv</span>
-      <span class="meta-pill" id="metaDateRange">01.01.2026 – 01.03.2026</span>
-      <span class="meta-pill" id="metaCount">84'958 Messungen</span>
-      <span class="meta-pill">10 Parameter</span>
+      <span class="meta-pill" id="metaDateRange" style="display:none"></span>
+      <span class="meta-pill" id="metaCount" style="display:none"></span>
+      <span class="meta-pill" id="metaParams" style="display:none"></span>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -608,7 +608,7 @@ code { background: var(--surface2); border: 1px solid var(--border); padding: 1p
   <div class="chart-area">
     <div class="chart-toolbar">
       <div class="chart-toolbar-left">
-        <div class="time-range-group" id="timeRangeBtns">
+        <div class="time-range-group" id="timeRangeBtns" style="display:none">
           <button class="time-range-btn active" onclick="setChartRange('all',this)">All</button>
           <button class="time-range-btn" onclick="setChartRange('jan',this)">Jan</button>
           <button class="time-range-btn" onclick="setChartRange('feb',this)">Feb</button>
@@ -1696,6 +1696,10 @@ function applyUploadedData() {
   const from = fp?.timeseries[0]?.t?.slice(0,10)||'';
   const to = fp?.timeseries.slice(-1)[0]?.t?.slice(0,10)||'';
   document.getElementById('metaDateRange').textContent = `${from} – ${to}`;
+  document.getElementById('metaDateRange').style.display = '';
+  document.getElementById('metaCount').style.display = '';
+  document.getElementById('metaParams').style.display = '';
+  document.getElementById('timeRangeBtns').style.display = '';
   if (window._datasetName) {
     const sub = document.getElementById('datasetSubtitle');
     sub.textContent = window._datasetName;
@@ -1707,6 +1711,7 @@ function applyUploadedData() {
   }
   const totalN = Object.values(DATA).reduce((s,v)=>s+(v.n||0),0);
   document.getElementById('metaCount').textContent = totalN.toLocaleString('de-CH')+' Messungen';
+  document.getElementById('metaParams').textContent = Object.keys(DATA).length+' Parameter';
 
   // Rebuild dynamic month buttons
   rebuildTimeButtons();
