@@ -1012,15 +1012,20 @@ function fmtNum(v, d = 3) {
 function filterTs(ts, range) {
   // Monatsansicht: 1:1 Rohdaten
   if (/^\d{4}-\d{2}$/.test(range)) return ts.filter(d => d.t.startsWith(range));
-  if (range !== 'all') return ts;
+  // Jahresansicht: 1:1 Rohdaten des Jahres (ggf. stündlich aggregiert)
+  if (/^\d{4}$/.test(range)) {
+    const yr = ts.filter(d => d.t.startsWith(range));
+    return aggregateIfNeeded(yr);
+  }
+  // ALL: alles, stündlich aggregiert wenn zu gross
+  return aggregateIfNeeded(ts);
+}
 
-  // ALL-Ansicht: stündlich aggregieren für performante Darstellung
-  // (bei 2-Minuten-Daten über 2 Jahre = ~500k Punkte → auf ~17.5k reduzieren)
-  if (ts.length <= 8760) return ts; // <= 1 Jahr stündlich → direkt anzeigen
-
+function aggregateIfNeeded(ts) {
+  if (ts.length <= 8760) return ts; // <= 1 Jahr Stundenwerte → direkt
   const hMap = {};
   ts.forEach(d => {
-    const hk = d.t.slice(0, 13) + ':00:00'; // "2024-01-01 14" → "2024-01-01 14:00:00"
+    const hk = d.t.slice(0, 13) + ':00:00';
     if (!hMap[hk]) hMap[hk] = { sum: 0, n: 0 };
     hMap[hk].sum += d.v; hMap[hk].n++;
   });
@@ -1731,17 +1736,39 @@ function applyUploadedData() {
 function rebuildTimeButtons() {
   const fp = Object.values(DATA)[0];
   if (!fp?.timeseries?.length) return;
+  const MO = {'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'Mai','06':'Jun',
+               '07':'Jul','08':'Aug','09':'Sep','10':'Okt','11':'Nov','12':'Dez'};
   const months = [...new Set(fp.timeseries.map(x => x.t.slice(0,7)))].sort();
-  const names = {'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'Mai','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Okt','11':'Nov','12':'Dez'};
+  const years  = [...new Set(months.map(m => m.slice(0,4)))].sort();
   const wrap = document.getElementById('timeRangeBtns');
+
+  // ALL-Button
   wrap.innerHTML = `<button class="time-range-btn active" onclick="setChartRange('all',this)">All</button>`;
-  months.slice(-4).forEach(m => {
-    const mo = m.slice(5,7);
-    const btn = document.createElement('button');
-    btn.className = 'time-range-btn';
-    btn.textContent = names[mo]||mo;
-    btn.setAttribute('onclick', `setChartRange('${m}',this)`);
-    wrap.appendChild(btn);
+
+  // Pro Jahr: Jahr-Button + Monats-Buttons
+  years.forEach(yr => {
+    // Trennstrich / Label Jahr
+    const sep = document.createElement('span');
+    sep.style.cssText = 'color:var(--text-muted);font-size:11px;margin:0 4px;align-self:center';
+    sep.textContent = '|';
+    wrap.appendChild(sep);
+
+    const yrBtn = document.createElement('button');
+    yrBtn.className = 'time-range-btn';
+    yrBtn.style.fontWeight = '600';
+    yrBtn.textContent = yr;
+    yrBtn.setAttribute('onclick', `setChartRange('${yr}',this)`);
+    wrap.appendChild(yrBtn);
+
+    // Monats-Buttons dieses Jahres
+    months.filter(m => m.startsWith(yr)).forEach(m => {
+      const mo = m.slice(5,7);
+      const btn = document.createElement('button');
+      btn.className = 'time-range-btn';
+      btn.textContent = MO[mo]||mo;
+      btn.setAttribute('onclick', `setChartRange('${m}',this)`);
+      wrap.appendChild(btn);
+    });
   });
 }
 
