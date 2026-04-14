@@ -1489,13 +1489,50 @@ function processFile(file) {
       const dataRows  = rows.slice(headerRowIdx + 1).filter(r => r && r.length > 1 && r[0]);
       if (headerRowIdx > 0) logMsg('ℹ Header in Zeile ' + (headerRowIdx+1) + ' gefunden', 'info');
 
+      // ── Robuster Timestamp-Parser ─────────────────────────────────────
+      // Unterstützt: DD.MM.YY, DD.MM.YYYY, ISO, Excel-Seriennummer, Date-Objekt
+      function parseTimestamp(raw) {
+        if (!raw && raw !== 0) return null;
+        if (raw instanceof Date) return isNaN(raw) ? null : raw;
+        const s = String(raw).trim();
+        if (!s) return null;
+        // Excel-Seriennummer (reine Zahl > 1000, z.B. 45292.5)
+        if (/^\d+\.?\d*$/.test(s)) {
+          const n = parseFloat(s);
+          if (n > 1000) {
+            const d = new Date((n - 25569) * 86400000);
+            return isNaN(d) ? null : d;
+          }
+        }
+        // Schweizer/Deutsches Format: DD.MM.YY(YY) HH:MM(:SS)
+        const sw = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+        if (sw) {
+          let [,dd,mm,yy,hh,mn,ss='0'] = sw;
+          if (yy.length === 2) yy = parseInt(yy) < 50 ? '20'+yy : '19'+yy;
+          const d = new Date(+yy, +mm-1, +dd, +hh, +mn, +ss);
+          return isNaN(d) ? null : d;
+        }
+        // Nur Datum: DD.MM.YY(YY)
+        const swDate = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+        if (swDate) {
+          let [,dd,mm,yy] = swDate;
+          if (yy.length === 2) yy = parseInt(yy) < 50 ? '20'+yy : '19'+yy;
+          const d = new Date(+yy, +mm-1, +dd);
+          return isNaN(d) ? null : d;
+        }
+        // ISO und andere Formate (Fallback)
+        const d = new Date(s);
+        return isNaN(d) ? null : d;
+      }
+
       // Hilfsfunktion: ist ein Wert ein Zeitstempel?
       function isTimestamp(val) {
         if (!val) return false;
         if (val instanceof Date) return true;
         const s = String(val).trim();
-        // gängige Zeitstempel-Muster: enthält ':' und Zahlen
-        return /\d{4}[-./]\d{1,2}[-./]\d{1,2}/.test(s) || /\d{1,2}[.:]\d{2}[.:]\d{2}/.test(s);
+        return /^\d{1,2}\.\d{1,2}\.\d{2,4}/.test(s) ||
+               /\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(s) ||
+               /^\d{5,}\.?\d*$/.test(s);  // Excel Seriennummer
       }
 
       // Hilfsfunktion: ist ein Wert eine Zahl?
@@ -1563,17 +1600,16 @@ function processFile(file) {
 
         const pairs = dataRows.map(r => {
           if (!r) return null;
-          // Zeitstempel immer aus Spalte 0
-          const t = r[0];
+          const dt = parseTimestamp(r[0]);
+          if (!dt) return null;
           const v = parseFloat(String(r[p.vc]||'').replace(',','.'));
-          return (t && !isNaN(v)) ? {t, v} : null;
+          return !isNaN(v) ? {dt, v} : null;
         }).filter(Boolean);
 
         if (!pairs.length) { logMsg('⚠ '+p.key+': keine gültigen Werte', 'warn'); return; }
 
         const hMap={}, dMap={};
-        pairs.forEach(({t,v}) => {
-          const dt = new Date(t); if(isNaN(dt)) return;
+        pairs.forEach(({dt,v}) => {
           const hk = dt.toISOString().slice(0,13).replace('T',' ')+':00:00';
           const dk = dt.toISOString().slice(0,10);
           (hMap[hk]||(hMap[hk]=[])).push(v);
