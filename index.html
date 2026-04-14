@@ -3056,11 +3056,26 @@ function runAnalyse() {
 // ═══════════════════════════════════════
 
 // Register Service Worker
+// ── Service Worker + aggressiver Cache-Reset ─────────────────────────────
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[PWA] Service Worker registered:', reg.scope))
-      .catch(err => console.warn('[PWA] SW registration failed:', err));
+  // Beim ersten Laden: prüfe ob neuer SW verfügbar und lade neu
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    console.log('[SW] Registered:', reg.scope);
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'activated') {
+          console.log('[SW] Neuer SW aktiv – Seite neu laden');
+          window.location.reload();
+        }
+      });
+    });
+  }).catch(e => console.warn('[SW] Fehler:', e));
+
+  // Controller-Wechsel → sofort neu laden
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    console.log('[SW] Controller gewechselt – neu laden');
+    window.location.reload();
   });
 }
 
