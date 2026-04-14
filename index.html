@@ -1638,8 +1638,10 @@ function processFile(file) {
 
         const hMap={}, dMap={};
         pairs.forEach(({dt,v}) => {
-          const hk = dt.toISOString().slice(0,13).replace('T',' ')+':00:00';
-          const dk = dt.toISOString().slice(0,10);
+          // Lokale Zeitkomponenten verwenden (kein UTC-Shift durch toISOString)
+          const _p = n => String(n).padStart(2,'0');
+          const hk = dt.getFullYear()+'-'+_p(dt.getMonth()+1)+'-'+_p(dt.getDate())+' '+_p(dt.getHours())+':00:00';
+          const dk = dt.getFullYear()+'-'+_p(dt.getMonth()+1)+'-'+_p(dt.getDate());
           (hMap[hk]||(hMap[hk]=[])).push(v);
           (dMap[dk]||(dMap[dk]=[])).push(v);
         });

@@ -1,6 +1,6 @@
-// Service Worker – Datenauswertung Wasserqualitätsparameter v2
-const CACHE = 'wasserqualitaet-v2';
-const DATA_CACHE = 'wasserqualitaet-data-v2';
+// Service Worker – Datenauswertung Wasserqualitätsparameter v3
+const CACHE = 'wasserqualitaet-v4';
+const DATA_CACHE = 'wasserqualitaet-data-v4';
 
 const STATIC = ['./', './index.html', './manifest.json', './favicon.ico',
   './icons/icon-192x192.png', './icons/icon-512x512.png'];
