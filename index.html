@@ -691,7 +691,7 @@ code { background: var(--surface2); border: 1px solid var(--border); padding: 1p
           <div style="font-size:36px;margin-bottom:12px">📊</div>
           <div class="upload-drop-title">Excel-Datei hier ablegen</div>
           <div class="upload-drop-sub">oder klicken zum Auswählen</div>
-          <div class="upload-drop-hint">.xlsx · .xls · Gleiche Struktur wie Stocketen-Export</div>
+          <div class="upload-drop-hint">.xlsx · .xls · Beliebige Spaltenstruktur – automatische Erkennung</div>
         </div>
 
         <div class="upload-progress" id="uploadProgress">
@@ -718,22 +718,30 @@ code { background: var(--surface2); border: 1px solid var(--border); padding: 1p
         </div>
 
         <div class="format-section">
-          <div class="format-title">📋 Erwartetes Dateiformat</div>
+          <div class="format-title">📋 Unterstütztes Dateiformat</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.8;margin-bottom:12px">
+            Beliebige <code>.xlsx</code>-Dateien werden unterstützt. Die Spaltenstruktur wird automatisch erkannt:
+          </div>
           <table class="fmt-table">
-            <thead><tr><th>Spalten</th><th>Parameter</th><th>Einheit</th><th>Beispiel</th></tr></thead>
+            <thead><tr><th>Spalte</th><th>Inhalt</th><th>Hinweis</th></tr></thead>
             <tbody>
-              <tr><td>A, B</td><td>SSK436</td><td>m⁻¹</td><td><code>2026-01-01 00:00 | 0.171</code></td></tr>
-              <tr><td>C, D</td><td>SAK436</td><td>m⁻¹</td><td><code>2026-01-01 00:00 | 0.088</code></td></tr>
-              <tr><td>E, F</td><td>DOC</td><td>mg/L</td><td><code>2026-01-01 00:00 | 1.629</code></td></tr>
-              <tr><td>G, H</td><td>Leitfähigkeit</td><td>µS/cm</td><td><code>2026-01-01 00:00 | 668.3</code></td></tr>
-              <tr><td>I, J</td><td>pH-Wert</td><td>—</td><td><code>2026-01-01 00:00 | 7.40</code></td></tr>
-              <tr><td>K, L</td><td>Temperatur</td><td>°C</td><td><code>2026-01-01 00:00 | 10.25</code></td></tr>
-              <tr><td>M, N</td><td>Redox</td><td>mV</td><td><code>2026-01-01 00:00 | 456.9</code></td></tr>
-              <tr><td>O, P</td><td>TOC</td><td>mg/L</td><td><code>2026-01-01 00:00 | 1.731</code></td></tr>
-              <tr><td>Q, R</td><td>Trübung</td><td>NTU</td><td><code>2026-01-01 00:00 | 0.242</code></td></tr>
-              <tr><td>S, T</td><td>Grundwasserstand</td><td>m ü.M.</td><td><code>2026-01-01 00:00 | 474.09</code></td></tr>
+              <tr><td><strong>A</strong></td><td>Zeitstempel</td><td>Pflichtfeld – z.B. <code>2026-01-01 00:00:00</code></td></tr>
+              <tr><td><strong>B, C, D …</strong></td><td>Messwerte</td><td>Beliebig viele Spalten, beliebige Parameter</td></tr>
             </tbody>
           </table>
+          <div style="margin-top:12px;font-size:12px;color:var(--text-muted);line-height:2">
+            <div>✔ <strong>Parametername</strong> aus Zeile 1 (Header) – wird direkt als Bezeichnung übernommen</div>
+            <div>✔ <strong>Einheit</strong> in eckigen oder runden Klammern – z.B. <code>Temperatur [°C]</code> oder <code>pH (−)</code></div>
+            <div>✔ <strong>Weitere Zeitstempel-Spalten</strong> werden automatisch erkannt und übersprungen</div>
+            <div>✔ <strong>Leere Spalten</strong> werden ignoriert</div>
+            <div>✔ <strong>Dezimaltrennzeichen</strong> Punkt und Komma werden beide akzeptiert</div>
+          </div>
+          <div style="margin-top:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:11px;font-family:'IBM Plex Mono',monospace;color:var(--text-muted);line-height:2">
+            <div style="color:var(--text);font-weight:600;margin-bottom:4px">Beispiel:</div>
+            <div>Zeitstempel &nbsp;&nbsp;&nbsp;&nbsp; Temperatur [°C] &nbsp; pH [-] &nbsp; Nitrat [mg/L] &nbsp; …</div>
+            <div>2026-01-01 00:00 &nbsp; 10.25 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 7.41 &nbsp;&nbsp; 4.8 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; …</div>
+            <div>2026-01-01 00:01 &nbsp; 10.24 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 7.40 &nbsp;&nbsp; 4.9 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; …</div>
+          </div>
         </div>
       </div>
     </div>
