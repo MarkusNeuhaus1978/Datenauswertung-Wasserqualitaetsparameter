@@ -645,7 +645,7 @@ code { background: var(--surface2); border: 1px solid var(--border); padding: 1p
     <div class="tab-bar">
       <div class="tab-item active" onclick="switchBottomTab('statistics', this)">Statistics</div>
       <div class="tab-item" onclick="switchBottomTab('rawdata', this)">Raw Data</div>
-      <div class="tab-item" onclick="switchBottomTab('upload', this)">📂 Daten laden</div>
+      <div class="tab-item" id="uploadTabBtn" onclick="switchBottomTab('upload', this)">📂 Daten laden</div>
       <div class="tab-item" id="analyseTabBtn" onclick="switchBottomTab('analyse', this)">🔍 Daten analysieren</div>
       <div class="tab-item" id="reportTabBtn" onclick="switchBottomTab('report', this)">📄 Bericht erstellen</div>
     </div>
@@ -941,23 +941,8 @@ let _dataLoaded = false;
 let _dataCallbacks = [];
 
 async function loadData() {
-  if (_dataLoaded) return;
-  try {
-    showLoadingBanner('Lade Messdaten…');
-    const base = document.querySelector('base')?.href || location.href.split('/').slice(0,-1).join('/') + '/';
-    const dataUrl = new URL('data/stocketen.json', base).href;
-    const res = await fetch(dataUrl);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const d = await res.json();
-    Object.assign(DATA, d);
-    _dataLoaded = true;
-    hideLoadingBanner();
-    _dataCallbacks.forEach(fn => fn());
-    _dataCallbacks = [];
-  } catch(e) {
-    showLoadingBanner('⚠ Daten konnten nicht geladen werden: ' + e.message, true);
-    console.error('[App] Data load failed:', e);
-  }
+  // Daten werden nicht automatisch geladen.
+  // Nutzer lädt eigene Excel-Datei via Tab «Daten laden».
 }
 
 function onDataReady(fn) {
@@ -1702,6 +1687,8 @@ function processFile(file) {
 function applyUploadedData() {
   if (!pendingData) return;
   Object.assign(DATA, pendingData);
+  document.getElementById('noDataHint').style.display = 'none';
+  document.getElementById('chartWrap').style.display = 'block';
   if (mainChartInst) { mainChartInst.destroy(); mainChartInst = null; }
 
   // Update header meta
@@ -3083,13 +3070,11 @@ spinStyle.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
 document.head.appendChild(spinStyle);
 
 // Boot sequence: load data then init UI
-onDataReady(() => {
-  buildParamRows();
-  buildAxisBadges();
-  updateChart();
-  buildStatsTable();
-});
-loadData();
+// App startet leer – Nutzer lädt eigene Excel-Datei
+buildParamRows();
+buildAxisBadges();
+// Upload-Tab als Standard aktivieren
+document.getElementById('uploadTabBtn')?.click();
 </script>
 </body>
 </html>
