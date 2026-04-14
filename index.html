@@ -1472,8 +1472,22 @@ function processFile(file) {
       // Falls eine Spalte Zahlenwerte enthält → als Parameter verwenden
       // Header-Zeile (row[0]) liefert den Parameternamen
 
-      const headerRow = rows[0] || [];
-      const dataRows  = rows.slice(1).filter(r => r && r.length > 1);
+      // Header-Zeile automatisch finden: erste Zeile mit überwiegend Text
+      // (manche Exports haben Metadaten-Zeilen vor dem eigentlichen Header)
+      let headerRowIdx = 0;
+      for (let ri = 0; ri < Math.min(10, rows.length); ri++) {
+        const r = rows[ri] || [];
+        // Überspringe Zeilen die hauptsächlich Zahlen oder leer sind
+        const textCells = r.filter(c => c && isNaN(parseFloat(String(c).replace(',','.'))) && !isTimestamp(c));
+        const nonEmpty  = r.filter(c => c !== '' && c !== null && c !== undefined);
+        if (nonEmpty.length > 1 && textCells.length >= nonEmpty.length * 0.4) {
+          headerRowIdx = ri; break;
+        }
+      }
+      const headerRow = rows[headerRowIdx] || [];
+      // Datenzeilen: alles nach der Header-Zeile, Zeilen mit gültigem Zeitstempel
+      const dataRows  = rows.slice(headerRowIdx + 1).filter(r => r && r.length > 1 && r[0]);
+      if (headerRowIdx > 0) logMsg('ℹ Header in Zeile ' + (headerRowIdx+1) + ' gefunden', 'info');
 
       // Hilfsfunktion: ist ein Wert ein Zeitstempel?
       function isTimestamp(val) {
@@ -1572,20 +1586,28 @@ function processFile(file) {
         const daily = Object.keys(dMap).sort().map(day => {
           const vals=dMap[day], mean=vals.reduce((a,b)=>a+b)/vals.length;
           return {day,
-            min:+Math.min(...vals).toFixed(6), max:+Math.max(...vals).toFixed(6),
+            min:+vals.reduce((a,b)=>a<b?a:b).toFixed(6), max:+vals.reduce((a,b)=>a>b?a:b).toFixed(6),
             mean:+mean.toFixed(6),
             p5:pctile(vals,5), p25:pctile(vals,25), p50:pctile(vals,50),
             p75:pctile(vals,75), p95:pctile(vals,95)};
         });
         const allVals = pairs.map(x=>x.v);
-        const mean = allVals.reduce((a,b)=>a+b)/allVals.length;
+        // Stack-sicheres Min/Max (kein Spread-Operator bei grossen Arrays)
+        let vMin=allVals[0], vMax=allVals[0], vSum=0;
+        for(let i=0;i<allVals.length;i++){
+          const v=allVals[i];
+          if(v<vMin) vMin=v; if(v>vMax) vMax=v; vSum+=v;
+        }
+        const mean = vSum/allVals.length;
+        let vStdSum=0;
+        for(let i=0;i<allVals.length;i++){const d=allVals[i]-mean;vStdSum+=d*d;}
 
         result[p.key] = {
           unit: p.unit, n: allVals.length,
-          min:  +Math.min(...allVals).toFixed(6),
-          max:  +Math.max(...allVals).toFixed(6),
+          min:  +vMin.toFixed(6),
+          max:  +vMax.toFixed(6),
           mean: +mean.toFixed(6),
-          std:  +(Math.sqrt(allVals.reduce((s,v)=>{const d=v-mean;return s+d*d},0)/allVals.length)).toFixed(6),
+          std:  +(Math.sqrt(vStdSum/allVals.length)).toFixed(6),
           p5:pctile(allVals,5), p25:pctile(allVals,25), p50:pctile(allVals,50),
           p75:pctile(allVals,75), p95:pctile(allVals,95),
           timeseries, daily
