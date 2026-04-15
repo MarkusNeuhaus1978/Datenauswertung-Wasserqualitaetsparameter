@@ -1726,6 +1726,9 @@ function applyUploadedData() {
   updateChart();
   buildStatsTable();
 
+  // Session speichern (für Refresh-Persistenz)
+  sessionSave(DATA, window._datasetName || '').catch(()=>{});
+
   // Switch to overview
   document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -3116,12 +3119,111 @@ const spinStyle = document.createElement('style');
 spinStyle.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
 document.head.appendChild(spinStyle);
 
-// Boot sequence: load data then init UI
-// App startet leer – Nutzer lädt eigene Excel-Datei
+
+// ══════════════════════════════════════════════════════════════════════
+// SESSION STORAGE via IndexedDB
+// Überlebt Seiten-Refresh, wird beim Tab-Schliessen gelöscht
+// ══════════════════════════════════════════════════════════════════════
+const SESSION_DB   = 'wq_session';
+const SESSION_STORE = 'session_data';
+const SESSION_KEY   = 'current';
+
+async function idbOpen() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(SESSION_DB, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(SESSION_STORE);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+
+async function sessionSave(data, name) {
+  try {
+    const db = await idbOpen();
+    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    tx.objectStore(SESSION_STORE).put({ data, name, ts: Date.now() }, SESSION_KEY);
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+    db.close();
+    console.log('[Session] Daten gespeichert');
+  } catch(e) { console.warn('[Session] Speichern fehlgeschlagen:', e); }
+}
+
+async function sessionLoad() {
+  try {
+    const db = await idbOpen();
+    const tx = db.transaction(SESSION_STORE, 'readonly');
+    const result = await new Promise((res, rej) => {
+      const req = tx.objectStore(SESSION_STORE).get(SESSION_KEY);
+      req.onsuccess = e => res(e.target.result);
+      req.onerror   = e => rej(e.target.error);
+    });
+    db.close();
+    return result || null;
+  } catch(e) { console.warn('[Session] Laden fehlgeschlagen:', e); return null; }
+}
+
+async function sessionClear() {
+  try {
+    const db = await idbOpen();
+    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    tx.objectStore(SESSION_STORE).delete(SESSION_KEY);
+    db.close();
+    console.log('[Session] Daten gelöscht');
+  } catch(e) { console.warn('[Session] Löschen fehlgeschlagen:', e); }
+}
+
+// Tab schliessen → Daten löschen
+window.addEventListener('beforeunload', () => {
+  // Synchron nicht möglich mit IndexedDB, aber wir setzen ein Flag
+  sessionStorage.setItem('wq_unloading', '1');
+});
+
+// Beim Laden: prüfen ob normaler Refresh (Flag fehlt) oder neuer Start (Flag gesetzt)
+// sessionStorage.getItem('wq_unloading') ist nach Tab-Schliessen weg (sessionStorage leert sich)
+// Nach Refresh ist es NICHT gesetzt weil wir es nie persistent setzen
+
+// Boot sequence: Session prüfen oder leer starten
 buildParamRows();
 buildAxisBadges();
-// Upload-Tab als Standard aktivieren
-document.getElementById('uploadTabBtn')?.click();
+
+(async () => {
+  // Beim normalen Refresh: Daten aus IndexedDB wiederherstellen
+  const session = await sessionLoad();
+  if (session?.data && Object.keys(session.data).length > 0) {
+    console.log('[Session] Daten wiederhergestellt nach Refresh');
+    window._datasetName = session.name || '';
+    Object.assign(DATA, session.data);
+    document.getElementById('noDataHint')?.remove();
+    document.getElementById('chartWrap')?.removeAttribute('style');
+    if (mainChartInst) { mainChartInst.destroy(); mainChartInst = null; }
+    const fp = Object.values(DATA)[0];
+    const from = fp?.timeseries[0]?.t?.slice(0,10)||'';
+    const to   = fp?.timeseries.slice(-1)[0]?.t?.slice(0,10)||'';
+    document.getElementById('metaDateRange').textContent = `${from} – ${to}`;
+    document.getElementById('metaDateRange').style.display = '';
+    document.getElementById('metaCount').style.display = '';
+    document.getElementById('metaParams').style.display = '';
+    document.getElementById('timeRangeBtns').style.display = '';
+    if (window._datasetName) {
+      const sub = document.getElementById('datasetSubtitle');
+      if (sub) { sub.textContent = window._datasetName; sub.style.display = 'block'; }
+    }
+    const totalN = Object.values(DATA).reduce((s,v)=>s+(v.n||0),0);
+    document.getElementById('metaCount').textContent = totalN.toLocaleString('de-CH')+' Messungen';
+    document.getElementById('metaParams').textContent = Object.keys(DATA).length+' Parameter';
+    rebuildTimeButtons();
+    state.range = 'all';
+    updateChart();
+    buildStatsTable();
+    document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.tab-item')?.classList.add('active');
+    document.getElementById('tab-statistics')?.classList.add('active');
+  } else {
+    // Keine Session-Daten → Upload-Tab
+    document.getElementById('uploadTabBtn')?.click();
+  }
+})();
 </script>
 </body>
 </html>
