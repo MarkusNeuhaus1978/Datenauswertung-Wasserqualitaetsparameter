@@ -1009,20 +1009,27 @@ function fmtNum(v, d = 3) {
   return v.toLocaleString('de-CH', { minimumFractionDigits: d, maximumFractionDigits: d });
 }
 
+// Maximale Datenpunkte pro Chart-Ansicht
+const MAX_CHART_POINTS = 4000;
+
 function filterTs(ts, range) {
-  // Monatsansicht: 1:1 Rohdaten
-  if (/^\d{4}-\d{2}$/.test(range)) return ts.filter(d => d.t.startsWith(range));
-  // Jahresansicht: 1:1 Rohdaten des Jahres (ggf. stündlich aggregiert)
+  // Monatsansicht: Rohdaten des Monats, auf MAX_CHART_POINTS begrenzt
+  if (/^\d{4}-\d{2}$/.test(range)) {
+    const month = ts.filter(d => d.t.startsWith(range));
+    return downsampleIfNeeded(month, MAX_CHART_POINTS);
+  }
+  // Jahresansicht: stündlich aggregiert
   if (/^\d{4}$/.test(range)) {
     const yr = ts.filter(d => d.t.startsWith(range));
-    return aggregateIfNeeded(yr);
+    return aggregateHourly(yr);
   }
-  // ALL: alles, stündlich aggregiert wenn zu gross
-  return aggregateIfNeeded(ts);
+  // ALL: stündlich aggregiert
+  return aggregateHourly(ts);
 }
 
-function aggregateIfNeeded(ts) {
-  if (ts.length <= 8760) return ts; // <= 1 Jahr Stundenwerte → direkt
+// Stündliche Aggregation (Mittelwert pro Stunde)
+function aggregateHourly(ts) {
+  if (!ts.length) return ts;
   const hMap = {};
   ts.forEach(d => {
     const hk = d.t.slice(0, 13) + ':00:00';
@@ -1032,6 +1039,17 @@ function aggregateIfNeeded(ts) {
   return Object.keys(hMap).sort().map(t => ({
     t, v: +(hMap[t].sum / hMap[t].n).toFixed(6)
   }));
+}
+
+// Gleichmässiges Downsampling: jeden n-ten Punkt behalten
+function downsampleIfNeeded(ts, maxPoints) {
+  if (ts.length <= maxPoints) return ts;
+  const step = ts.length / maxPoints;
+  const result = [];
+  for (let i = 0; i < maxPoints; i++) {
+    result.push(ts[Math.round(i * step)]);
+  }
+  return result;
 }
 function filterDaily(daily, range) {
   if (range === 'all') return daily;

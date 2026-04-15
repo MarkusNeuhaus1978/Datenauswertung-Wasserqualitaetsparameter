@@ -1,6 +1,6 @@
 // Service Worker – Datenauswertung Wasserqualitätsparameter v5
-const CACHE = 'wasserqualitaet-v12';
-const DATA_CACHE = 'wasserqualitaet-data-v12';
+const CACHE = 'wasserqualitaet-v13';
+const DATA_CACHE = 'wasserqualitaet-data-v13';
 
 const CDN = [
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js',
