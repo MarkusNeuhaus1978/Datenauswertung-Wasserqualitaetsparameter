@@ -1277,6 +1277,30 @@ function setChartRange(range, btn) {
   state.range = range;
   document.querySelectorAll('#timeRangeBtns .time-range-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+
+  // DEBUG: show filterTs result count
+  const firstParam = PARAMS.find(p => DATA[p.key]);
+  if (firstParam) {
+    const ts = DATA[firstParam.key].timeseries;
+    const filtered = filterTs(ts, range);
+    const firstT = filtered[0]?.t || '—';
+    const lastT  = filtered.slice(-1)[0]?.t || '—';
+    const dbg = document.getElementById('_dbg') || (() => {
+      const d = document.createElement('div');
+      d.id = '_dbg';
+      d.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:9999;background:#1a2030;color:#7ee8a2;font-family:monospace;font-size:12px;padding:10px 14px;border-radius:8px;max-width:420px;line-height:1.6';
+      document.body.appendChild(d);
+      return d;
+    })();
+    dbg.innerHTML = `<b>DEBUG filterTs('${range}')</b><br>
+      Rohdaten total: ${ts.length.toLocaleString()}<br>
+      Gefiltert: ${filtered.length.toLocaleString()} Punkte<br>
+      Erster: ${firstT}<br>
+      Letzter: ${lastT}<br>
+      Erster Roh-TS: ${ts[0]?.t || '—'}<br>
+      Letzter Roh-TS: ${ts.slice(-1)[0]?.t || '—'}`;
+  }
+
   updateChart();
   buildStatsTable();
   renderRawData();
