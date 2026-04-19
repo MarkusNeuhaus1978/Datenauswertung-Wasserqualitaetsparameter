@@ -1880,7 +1880,7 @@ async function drawOverviewChart(canvas, ctx) {
   for (const p of panels) {
     const allVals = p.keys.flatMap(k => getFilteredTs(k).map(x => x.v));
     if (!allVals.length) continue;
-    const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+    const minV = allVals.reduce((a,b)=>a<b?a:b, Infinity), maxV = allVals.reduce((a,b)=>a>b?a:b, -Infinity);
     const range = maxV - minV || 1;
     const ts0 = getFilteredTs(p.keys[0]);
     const n = ts0.length;
@@ -1942,7 +1942,7 @@ async function drawSensorChart(canvas, ctx) {
     if (!ts.length) return;
     const oy = pad + pi*(ch+gap);
     const vals = ts.map(x=>x.v);
-    const maxV = Math.max(...vals) || 1;
+    const maxV = vals.reduce((a,b)=>a>b?a:b, -Infinity) || 1;
 
     // title
     ctx.fillStyle = color; ctx.font = 'bold 18px Inter,sans-serif';
@@ -1991,7 +1991,7 @@ async function drawAnomalyChart(canvas, ctx) {
     const ts = getFilteredTs(key).filter(x => window(x.t));
     if (!ts.length) return;
     const vals = ts.map(x=>x.v);
-    const minV = Math.min(...vals), maxV = Math.max(...vals), range = maxV-minV||1;
+    const minV = vals.reduce((a,b)=>a<b?a:b, Infinity), maxV = vals.reduce((a,b)=>a>b?a:b, -Infinity), range = maxV-minV||1;
     const ox = pad + ci*(cw+gap);
     const oy = 60;
 
@@ -2052,7 +2052,7 @@ async function drawTrendsChart(canvas, ctx) {
     ts.forEach(x => { const d=x.t.slice(0,10); (daily[d]||(daily[d]=[])).push(x.v); });
     const days = Object.keys(daily).sort();
     const means = days.map(d => daily[d].reduce((a,b)=>a+b)/daily[d].length);
-    const minV = Math.min(...means), maxV = Math.max(...means), range=maxV-minV||1;
+    const minV = means.reduce((a,b)=>a<b?a:b, Infinity), maxV = means.reduce((a,b)=>a>b?a:b, -Infinity), range=maxV-minV||1;
     const oy = pad + si*(ch+gap);
 
     ctx.fillStyle=s.color; ctx.font='bold 16px Inter,sans-serif';
@@ -2168,7 +2168,7 @@ function computeAnomalies() {
   const std_r  = Math.sqrt(redox.reduce((s,x)=>s+(x.v-mean_r)**2,0)/redox.length);
   const drops  = redox.filter(x => x.v < mean_r - 3*std_r);
   if (drops.length) results.push({ key:'Redox', type:'Extremwert', hours:drops.length,
-    desc:`${drops.length} Stunden |z|>3, Min: ${Math.min(...drops.map(x=>x.v)).toFixed(1)} mV` });
+    desc:`${drops.length} Stunden |z|>3, Min: ${drops.map(x=>x.v).reduce((a,b)=>a<b?a:b, Infinity).toFixed(1)} mV` });
 
   return results;
 }
@@ -2704,7 +2704,7 @@ function runAnalyse() {
     const gw_slope=slope_pw('GW-Pegel'), lf_slope=slope_pw('Leitfähigkeit');
     const t_slope=slope_pw('Temperatur'), doc_slope=slope_pw('DOC');
     const redox_drops=rv.filter(x=>x<rm-2.5*rs);
-    const redox_min=redox_drops.length ? Math.min(...redox_drops) : rm;
+    const redox_min=redox_drops.length ? redox_drops.reduce((a,b)=>a<b?a:b, redox_drops[0]) : rm;
     const month=getMonth();
     const bdoc=dm*0.25, hardness=lm*0.067;
 
@@ -2716,7 +2716,7 @@ function runAnalyse() {
     const turb_delta6h= maxDelta('Trübung', 6);
     const gw_delta24h = maxDelta('GW-Pegel', 24);
     const temp_delta12= maxDelta('Temperatur', 12);
-    const ph_max      = Math.max(...pv);
+    const ph_max      = pv.reduce((a,b)=>a>b?a:b, -Infinity);
 
     // ════════════════════════════════════════════════════════════════════
     // 1. ANOMALIEN (allgemein)
@@ -3104,16 +3104,23 @@ if ('serviceWorker' in navigator) {
     reg.addEventListener('updatefound', () => {
       const newWorker = reg.installing;
       newWorker.addEventListener('statechange', () => {
-        if (newWorker.state === 'activated') {
+        if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
           console.log('[SW] Neuer SW aktiv – Seite neu laden');
-          window.location.reload();
+          // Nur einmal neu laden (Flag verhindert Loop)
+          if (!sessionStorage.getItem('_sw_reloaded')) {
+            sessionStorage.setItem('_sw_reloaded', '1');
+            window.location.reload();
+          }
         }
       });
     });
   }).catch(e => console.warn('[SW] Fehler:', e));
 
-  // Controller-Wechsel → sofort neu laden
+  // Controller-Wechsel → einmalig neu laden
+  let _swReloading = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (_swReloading) return;
+    _swReloading = true;
     console.log('[SW] Controller gewechselt – neu laden');
     window.location.reload();
   });
