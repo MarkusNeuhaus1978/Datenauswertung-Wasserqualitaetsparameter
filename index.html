@@ -1013,23 +1013,24 @@ function fmtNum(v, d = 3) {
 const MAX_CHART_POINTS = 4000;
 
 function filterTs(ts, range) {
-  // Monatsansicht: Rohdaten des Monats, auf MAX_CHART_POINTS begrenzt
+  if (!ts || !ts.length) return [];
+  // Monatsansicht: z.B. '2025-04' → Rohdaten des Monats, auf MAX_CHART_POINTS begrenzt
   if (/^\d{4}-\d{2}$/.test(range)) {
-    const month = ts.filter(d => d.t.startsWith(range));
+    const month = ts.filter(d => d.t && d.t.startsWith(range));
     return downsampleIfNeeded(month, MAX_CHART_POINTS);
   }
-  // Jahresansicht: stündlich aggregiert
+  // Jahresansicht: z.B. '2025' → stündlich aggregiert
   if (/^\d{4}$/.test(range)) {
-    const yr = ts.filter(d => d.t.startsWith(range));
+    const yr = ts.filter(d => d.t && d.t.startsWith(range));
     return aggregateHourly(yr);
   }
-  // ALL: stündlich aggregiert
+  // ALL: alle Daten, stündlich aggregiert
   return aggregateHourly(ts);
 }
 
 // Stündliche Aggregation (Mittelwert pro Stunde)
 function aggregateHourly(ts) {
-  if (!ts.length) return ts;
+  if (!ts || !ts.length) return [];
   const hMap = {};
   ts.forEach(d => {
     const hk = d.t.slice(0, 13) + ':00:00';
@@ -1520,7 +1521,17 @@ function processFile(file) {
         if (/^\d+\.?\d*$/.test(s)) {
           const n = parseFloat(s);
           if (n > 1000) {
-            const d = new Date((n - 25569) * 86400000);
+            // Lokale Interpretation: kein UTC-Shift
+            // Excel-Tag 0 = 1899-12-30, Seriennummer in Tagen
+            const totalSeconds = Math.round((n - 25569) * 86400);
+            const ms = totalSeconds * 1000;
+            const utc = new Date(ms);
+            // Umrechnung in lokale Zeit ohne Timezone-Verschiebung:
+            // Wir lesen UTC-Felder (die dem Excel-Wert entsprechen)
+            const d = new Date(
+              utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate(),
+              utc.getUTCHours(), utc.getUTCMinutes(), utc.getUTCSeconds()
+            );
             return isNaN(d) ? null : d;
           }
         }
