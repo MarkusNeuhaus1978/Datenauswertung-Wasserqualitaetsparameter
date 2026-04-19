@@ -624,6 +624,16 @@ code { background: var(--surface2); border: 1px solid var(--border); padding: 1p
       <canvas id="mainChart"></canvas>
     </div>
     <div class="axis-badges" id="axisBadges"></div>
+    <div id="anomalyLegend" style="display:none;margin-top:6px;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--text-muted);display:flex;gap:14px;flex-wrap:wrap;padding:0 4px">
+      <span style="display:flex;align-items:center;gap:4px">
+        <span style="display:inline-block;width:12px;height:12px;background:rgba(239,68,68,0.25);border:1.5px solid rgba(239,68,68,0.6);border-radius:2px"></span>
+        Sensorausfall / Ausreisser
+      </span>
+      <span style="display:flex;align-items:center;gap:4px">
+        <span style="display:inline-block;width:12px;height:12px;background:rgba(234,179,8,0.3);border:1.5px solid rgba(234,179,8,0.7);border-radius:2px"></span>
+        Redox-Einbruch
+      </span>
+    </div>
   </div>
 
   <!-- OPTIONS PANEL -->
@@ -1151,6 +1161,146 @@ function updateChart() {
     };
   });
 
+  // ── Anomalie-Zonen berechnen ────────────────────────────────────────
+  function computeAnomalyZones() {
+    const zones = [];
+    if (!Object.keys(DATA).length) return zones;
+
+    // 1. Sensor-Ausfälle: SSK436 / SAK436 Nullwert-Phasen
+    for (const key of ['SSK436', 'SAK436']) {
+      const ts = DATA[key]?.timeseries;
+      if (!ts?.length) continue;
+      const mean = ts.reduce((s,x)=>s+x.v,0)/ts.length;
+      if (mean < 0.005) continue;
+      let start = null, startIdx = 0;
+      for (let i = 0; i < ts.length; i++) {
+        const isZero = ts[i].v < 0.005;
+        if (isZero && start === null) { start = ts[i].t; startIdx = i; }
+        if (!isZero && start !== null) {
+          if (i - startIdx >= 30) {
+            zones.push({ from: start, to: ts[i-1].t,
+              color: 'rgba(239,68,68,0.13)', border: 'rgba(239,68,68,0.55)',
+              title: key + ' Ausfall' });
+          }
+          start = null;
+        }
+      }
+      if (start !== null) zones.push({ from: start, to: ts[ts.length-1].t,
+        color: 'rgba(239,68,68,0.13)', border: 'rgba(239,68,68,0.55)',
+        title: key + ' Ausfall' });
+    }
+
+    // 2. Redox-Einbrüche (< mean - 2.5*std)
+    const redoxTs = DATA['Redox']?.timeseries;
+    if (redoxTs?.length) {
+      const vals = redoxTs.map(x=>x.v);
+      const m = vals.reduce((a,b)=>a+b,0)/vals.length;
+      const s = Math.sqrt(vals.reduce((a,v)=>a+(v-m)**2,0)/vals.length);
+      const thresh = m - 2.5*s;
+      let start = null;
+      for (let i = 0; i < redoxTs.length; i++) {
+        const bad = redoxTs[i].v < thresh;
+        if (bad && start === null) start = redoxTs[i].t;
+        if (!bad && start !== null) {
+          zones.push({ from: start, to: redoxTs[i-1].t,
+            color: 'rgba(234,179,8,0.18)', border: 'rgba(234,179,8,0.7)',
+            title: 'Redox-Einbruch' });
+          start = null;
+        }
+      }
+      if (start !== null) zones.push({ from: start, to: redoxTs[redoxTs.length-1].t,
+        color: 'rgba(234,179,8,0.18)', border: 'rgba(234,179,8,0.7)',
+        title: 'Redox-Einbruch' });
+    }
+
+    // 3. Leitfähigkeit: Spike > mean + 3*std
+    const lfTs = DATA['Leitfähigkeit']?.timeseries;
+    if (lfTs?.length) {
+      const vals = lfTs.map(x=>x.v);
+      const m = vals.reduce((a,b)=>a+b,0)/vals.length;
+      const s = Math.sqrt(vals.reduce((a,v)=>a+(v-m)**2,0)/vals.length);
+      const thresh = m + 3*s;
+      let start = null;
+      for (let i = 0; i < lfTs.length; i++) {
+        const bad = lfTs[i].v > thresh;
+        if (bad && start === null) start = lfTs[i].t;
+        if (!bad && start !== null) {
+          zones.push({ from: start, to: lfTs[i-1].t,
+            color: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.45)',
+            title: 'LF-Spike' });
+          start = null;
+        }
+      }
+      if (start !== null) zones.push({ from: start, to: lfTs[lfTs.length-1].t,
+        color: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.45)',
+        title: 'LF-Spike' });
+    }
+
+    return zones;
+  }
+
+  const anomalyZones = computeAnomalyZones();
+
+  // Anomalie-Zone Plugin
+  const anomalyPlugin = {
+    id: 'anomalyZones',
+    beforeDraw(chart) {
+      if (!anomalyZones.length) return;
+      const { ctx, chartArea, scales } = chart;
+      const xScale = scales['x'];
+      if (!xScale) return;
+      const labels = chart.data.labels;
+      if (!labels?.length) return;
+
+      ctx.save();
+      anomalyZones.forEach(zone => {
+        const fromLabel = zone.from.slice(5, 13);
+        const toLabel   = zone.to.slice(5, 13);
+        let fromIdx = labels.findIndex(l => l >= fromLabel);
+        let toIdx   = labels.findIndex(l => l >= toLabel);
+        if (fromIdx < 0) fromIdx = 0;
+        if (toIdx < 0) toIdx = labels.length - 1;
+        if (fromIdx > toIdx) return;
+
+        const x1 = xScale.getPixelForValue(fromIdx);
+        const x2 = xScale.getPixelForValue(toIdx);
+        const w  = Math.max(x2 - x1, 2);
+
+        ctx.fillStyle = zone.color;
+        ctx.fillRect(x1, chartArea.top, w, chartArea.bottom - chartArea.top);
+
+        ctx.strokeStyle = zone.border;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x1, chartArea.top);
+        ctx.lineTo(x1, chartArea.bottom);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        if ((x2 - x1) > 4) {
+          ctx.strokeStyle = zone.border;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath();
+          ctx.moveTo(x2, chartArea.top);
+          ctx.lineTo(x2, chartArea.bottom);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        const labelX = x1 + 3;
+        if (labelX + 5 < chartArea.right) {
+          ctx.fillStyle = zone.border.replace(/[\d.]+\)$/, '0.9)');
+          ctx.font = 'bold 9px IBM Plex Mono, monospace';
+          ctx.textAlign = 'left';
+          ctx.fillText(zone.title, labelX, chartArea.top + 11);
+        }
+      });
+      ctx.restore();
+    }
+  };
+
   // Zero-line annotation plugin (inline, no extra lib needed)
   const zeroLinePlugin = {
     id: 'zeroLine',
@@ -1235,7 +1385,7 @@ function updateChart() {
   mainChartInst = new Chart(ctx, {
     type: 'line',
     data: chartData,
-    plugins: [zeroLinePlugin],
+    plugins: [anomalyPlugin, zeroLinePlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -1742,6 +1892,7 @@ function applyUploadedData() {
   document.getElementById('metaCount').style.display = '';
   document.getElementById('metaParams').style.display = '';
   document.getElementById('timeRangeBtns').style.display = '';
+  document.getElementById('anomalyLegend').style.display = 'flex';
   if (window._datasetName) {
     const sub = document.getElementById('datasetSubtitle');
     sub.textContent = window._datasetName;
