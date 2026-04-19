@@ -1229,7 +1229,7 @@ function updateChart() {
     return ` ${ds.label}: ${fmtNum(ctx.parsed.y)} ${ds._unit}`;
   };
 
-  if (mainChartInst) { mainChartInst.destroy(); mainChartInst = null; }
+  if (mainChartInst) { try { mainChartInst.resetZoom(); } catch(e){} mainChartInst.destroy(); mainChartInst = null; }
 
   const ctx = document.getElementById('mainChart').getContext('2d');
   mainChartInst = new Chart(ctx, {
@@ -1274,33 +1274,17 @@ function updateChart() {
 }
 
 function setChartRange(range, btn) {
+  // Zoom zuerst zurücksetzen bevor Range wechselt
+  if (mainChartInst) {
+    mainChartInst.resetZoom();
+    mainChartInst.destroy();
+    mainChartInst = null;
+  }
+  document.getElementById('resetZoomBtn').style.display = 'none';
+  document.getElementById('zoomHint').style.display = 'none';
   state.range = range;
   document.querySelectorAll('#timeRangeBtns .time-range-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-
-  // DEBUG: show filterTs result count
-  const firstParam = PARAMS.find(p => DATA[p.key]);
-  if (firstParam) {
-    const ts = DATA[firstParam.key].timeseries;
-    const filtered = filterTs(ts, range);
-    const firstT = filtered[0]?.t || '—';
-    const lastT  = filtered.slice(-1)[0]?.t || '—';
-    const dbg = document.getElementById('_dbg') || (() => {
-      const d = document.createElement('div');
-      d.id = '_dbg';
-      d.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:9999;background:#1a2030;color:#7ee8a2;font-family:monospace;font-size:12px;padding:10px 14px;border-radius:8px;max-width:420px;line-height:1.6';
-      document.body.appendChild(d);
-      return d;
-    })();
-    dbg.innerHTML = `<b>DEBUG filterTs('${range}')</b><br>
-      Rohdaten total: ${ts.length.toLocaleString()}<br>
-      Gefiltert: ${filtered.length.toLocaleString()} Punkte<br>
-      Erster: ${firstT}<br>
-      Letzter: ${lastT}<br>
-      Erster Roh-TS: ${ts[0]?.t || '—'}<br>
-      Letzter Roh-TS: ${ts.slice(-1)[0]?.t || '—'}`;
-  }
-
   updateChart();
   buildStatsTable();
   renderRawData();
@@ -1747,7 +1731,7 @@ function applyUploadedData() {
   Object.assign(DATA, pendingData);
   document.getElementById('noDataHint')?.remove();
   document.getElementById('chartWrap')?.removeAttribute('style');
-  if (mainChartInst) { mainChartInst.destroy(); mainChartInst = null; }
+  if (mainChartInst) { try { mainChartInst.resetZoom(); } catch(e){} mainChartInst.destroy(); mainChartInst = null; }
 
   // Update header meta
   const fp = Object.values(DATA)[0];
@@ -3248,7 +3232,7 @@ buildAxisBadges();
     Object.assign(DATA, session.data);
     document.getElementById('noDataHint')?.remove();
     document.getElementById('chartWrap')?.removeAttribute('style');
-    if (mainChartInst) { mainChartInst.destroy(); mainChartInst = null; }
+    if (mainChartInst) { try { mainChartInst.resetZoom(); } catch(e){} mainChartInst.destroy(); mainChartInst = null; }
     const fp = Object.values(DATA)[0];
     const from = fp?.timeseries[0]?.t?.slice(0,10)||'';
     const to   = fp?.timeseries.slice(-1)[0]?.t?.slice(0,10)||'';
