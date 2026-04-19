@@ -594,11 +594,11 @@ code { background: var(--surface2); border: 1px solid var(--border); padding: 1p
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
-    <button class="btn-report" style="background:#0891b2;box-shadow:0 2px 8px rgba(8,145,178,0.25);" onclick="openAnalyseTab()">
-      🔍 Analyse Data
+    <button class="btn-report" style="background:#0891b2;box-shadow:0 2px 8px rgba(8,145,178,0.25);" onclick="switchBottomTab('upload', document.getElementById('uploadTabBtn'))">
+      📂 Load Data
     </button>
-    <button class="btn-report" onclick="openReportTab()">
-      📄 Create Report
+    <button class="btn-report" onclick="openAnalyseTab()">
+      🔍 Analyse Data
     </button>
   </div>
 </div>
